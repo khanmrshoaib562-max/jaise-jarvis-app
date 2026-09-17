@@ -17,13 +17,18 @@ jobs:
           java-version: 17
 
       - uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Extract and Build
         run: |
           unzip -o Jarvis.zip -d project
-          find project -maxdepth 4 -type d
-          find project -name "build.gradle*" -o -name "settings.gradle*" -o -name "gradlew"
-          PROJECT_ROOT=$(find project -name "settings.gradle*" -o -name "build.gradle" | head -1 | xargs dirname)
+          find project -maxdepth 4 -type d -name "settings.gradle*" -o -name "build.gradle*"
+          PROJECT_ROOT=$(find project -name "settings.gradle*" -o -name "build.gradle*" | head -1 | xargs dirname)
           echo "Root: $PROJECT_ROOT"
           cd "$PROJECT_ROOT"
           if [ ! -f gradlew ]; then
