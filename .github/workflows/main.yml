@@ -10,27 +10,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download project
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Extract JarvisApp.zip
-        run: |
-          unzip -o JarvisApp.zip
-          cd JarvisApp
-          echo "PROJECT_DIR=$PWD" >> $GITHUB_ENV
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
+          cache: gradle
 
-      - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleDebug --no-daemon
+      - name: Extract ZIP (if present)
+        run: |
+          if [ -f "*.zip" ]; then
+            echo "ZIP found, extracting..."
+            unzip -o *.zip -d extracted
+            # अगर ZIP के अंदर एक folder है तो उसमें जाओ
+            if [ -d extracted/*/ ]; then
+              cd extracted/*/
+              ls -la
+            else
+              cd extracted
+            fi
+          else
+            echo "No ZIP found, building from root"
+          fi
+
+      - name: Make gradlew executable
+        run: |
+          # ZIP extract होने के बाद project root ढूंढो
+          if [ -d extracted ]; then
+            find extracted -name "gradlew" -exec chmod +x {} \;
+            PROJECT_DIR=$(find extracted -name "gradlew" -exec dirname {} \; | head -1)
+            echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          else
+            chmod +x ./gradlew || true
+            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          fi
+
+      - name: Build Debug APK
+        run: |
+          cd $PROJECT_DIR
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-debug-apk
-          path: JarvisApp/app/build/outputs/apk/debug/app-debug.apk
+          name: Jarvis-APK
+          path: |
+            **/app/build/outputs/apk/debug/*.apk
+            **/build/outputs/apk/debug/*.apk
