@@ -30,8 +30,8 @@ jobs:
       - name: Extract and Fix Project
         run: |
           unzip -o JarvisApp.zip -d project
-          
-          # Fix settings.gradle (modern style)
+
+          # ===== Fix settings.gradle =====
           cat > project/JarvisApp/settings.gradle << 'EOF'
           pluginManagement {
               repositories {
@@ -51,7 +51,7 @@ jobs:
           include ':app'
           EOF
 
-          # Fix root build.gradle
+          # ===== Fix root build.gradle =====
           cat > project/JarvisApp/build.gradle << 'EOF'
           plugins {
               id 'com.android.application' version '8.5.0' apply false
@@ -59,10 +59,129 @@ jobs:
           }
           EOF
 
-          echo "=== Fixed files ==="
-          cat project/JarvisApp/settings.gradle
-          echo "----"
-          cat project/JarvisApp/build.gradle
+          # ===== Fix MainActivity.kt (broken method) =====
+          cat > project/JarvisApp/app/src/main/java/com/jarvis/assistant/MainActivity.kt << 'EOF'
+          package com.jarvis.assistant
+
+          import android.Manifest
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.os.Bundle
+          import android.speech.RecognitionListener
+          import android.speech.RecognizerIntent
+          import android.speech.SpeechRecognizer
+          import android.speech.tts.TextToSpeech
+          import android.webkit.JavascriptInterface
+          import android.webkit.WebChromeClient
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+          import org.json.JSONObject
+          import java.util.Locale
+
+          class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+
+              private lateinit var webView: WebView
+              private var tts: TextToSpeech? = null
+              private var speechRecognizer: SpeechRecognizer? = null
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  webView = findViewById(R.id.webview)
+                  webView.settings.javaScriptEnabled = true
+                  webView.settings.domStorageEnabled = true
+                  webView.webViewClient = WebViewClient()
+                  webView.webChromeClient = WebChromeClient()
+                  webView.addJavascriptInterface(JarvisBridge(), "AndroidJarvis")
+                  webView.loadUrl("file:///android_asset/jarvis.html")
+
+                  tts = TextToSpeech(this, this)
+
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                      != PackageManager.PERMISSION_GRANTED
+                  ) {
+                      ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+                  }
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("hi", "IN")
+                  }
+              }
+
+              inner class JarvisBridge {
+
+                  @JavascriptInterface
+                  fun speak(text: String) {
+                      runOnUiThread {
+                          tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis_utt")
+                      }
+                  }
+
+                  @JavascriptInterface
+                  fun stopSpeak() {
+                      runOnUiThread { tts?.stop() }
+                  }
+
+                  @JavascriptInterface
+                  fun startListening() {
+                      runOnUiThread {
+                          if (speechRecognizer == null) {
+                              speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this@MainActivity)
+                          }
+                          val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                              putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                              putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                          }
+                          speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                              override fun onResults(bundle: Bundle?) {
+                                  val matches = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                                  val said = matches?.firstOrNull() ?: ""
+                                  sendResultToWeb(said)
+                              }
+                              override fun onError(error: Int) {
+                                  webView.post {
+                                      webView.evaluateJavascript(
+                                          "window.onAndroidSpeechError && window.onAndroidSpeechError($error);", null
+                                      )
+                                  }
+                              }
+                              override fun onReadyForSpeech(params: Bundle?) {}
+                              override fun onBeginningOfSpeech() {}
+                              override fun onRmsChanged(rmsdB: Float) {}
+                              override fun onBufferReceived(buffer: ByteArray?) {}
+                              override fun onEndOfSpeech() {}
+                              override fun onPartialResults(partialResults: Bundle?) {}
+                              override fun onEvent(eventType: Int, params: Bundle?) {}
+                          })
+                          speechRecognizer?.startListening(intent)
+                      }
+                  }
+
+                  private fun sendResultToWeb(said: String) {
+                      webView.post {
+                          webView.evaluateJavascript(
+                              "window.onAndroidSpeechResult && window.onAndroidSpeechResult(" + JSONObject.quote(said) + ");",
+                              null
+                          )
+                      }
+                  }
+              }
+
+              override fun onDestroy() {
+                  tts?.shutdown()
+                  speechRecognizer?.destroy()
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+          echo "=== Files fixed successfully ==="
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -71,8 +190,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: project/JarvisApp
-        run: |
-          gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
