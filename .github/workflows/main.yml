@@ -18,40 +18,42 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: gradle
 
-      - name: Extract ZIP (if present)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Extract Jarvis.zip
         run: |
-          if [ -f "*.zip" ]; then
-            echo "ZIP found, extracting..."
-            unzip -o *.zip -d extracted
-            # अगर ZIP के अंदर एक folder है तो उसमें जाओ
-            if [ -d extracted/*/ ]; then
-              cd extracted/*/
-              ls -la
-            else
-              cd extracted
-            fi
-          else
-            echo "No ZIP found, building from root"
+          echo "Extracting Jarvis.zip..."
+          unzip -o Jarvis.zip -d project
+          echo "=== Extracted structure ==="
+          find project -maxdepth 3 -type d
+          find project -name "build.gradle*" -o -name "settings.gradle*" -o -name "gradlew" | head -20
+
+      - name: Find project root and build
+        run: |
+          # Project root ढूंढो जहाँ build.gradle या settings.gradle हो
+          PROJECT_ROOT=$(find project -name "settings.gradle*" -o -name "build.gradle" | head -1 | xargs dirname)
+          
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "Error: No Android project found inside ZIP"
+            ls -la project/
+            exit 1
           fi
-
-      - name: Make gradlew executable
-        run: |
-          # ZIP extract होने के बाद project root ढूंढो
-          if [ -d extracted ]; then
-            find extracted -name "gradlew" -exec chmod +x {} \;
-            PROJECT_DIR=$(find extracted -name "gradlew" -exec dirname {} \; | head -1)
-            echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          else
-            chmod +x ./gradlew || true
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          
+          echo "Project root found at: $PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
+          
+          # अगर gradlew नहीं है तो wrapper बनाओ
+          if [ ! -f "./gradlew" ]; then
+            echo "gradlew not found, generating wrapper..."
+            gradle wrapper --gradle-version 8.7 || true
           fi
-
-      - name: Build Debug APK
-        run: |
-          cd $PROJECT_DIR
-          ./gradlew assembleDebug --stacktrace
+          
+          chmod +x ./gradlew || true
+          
+          echo "Building APK..."
+          ./gradlew assembleDebug --stacktrace || gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -60,3 +62,5 @@ jobs:
           path: |
             **/app/build/outputs/apk/debug/*.apk
             **/build/outputs/apk/debug/*.apk
+            **/*.apk
+          if-no-files-found: warn
