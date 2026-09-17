@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<title>Jarvis AI</title>
+<style>
+  :root{ --bg:#05070d; --glow:#00e5ff; --glow2:#7c3aed; --text:#e8f6ff; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:radial-gradient(circle at 50% 30%,#0d1524,var(--bg));
+    font-family:'Segoe UI',system-ui,sans-serif;color:var(--text);overflow-x:hidden;}
+  .wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    min-height:100%;padding:24px 16px 40px;}
+  h1{letter-spacing:4px;font-weight:300;color:var(--glow);text-shadow:0 0 12px var(--glow);margin-bottom:6px;}
+  .sub{opacity:.6;font-size:13px;margin-bottom:20px;}
+  .orb-wrap{position:relative;width:200px;height:200px;margin:10px 0 24px;}
+  .orb{position:absolute;inset:0;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,var(--glow),var(--glow2) 60%,#000 100%);
+    box-shadow:0 0 40px var(--glow),0 0 90px var(--glow2);
+    animation:pulse 2.4s ease-in-out infinite;cursor:pointer;}
+  .orb.listening{animation:pulse 0.9s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
+  .ring{position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(0,229,255,.35);
+    animation:spin 8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .status{min-height:24px;opacity:.85;margin-bottom:14px;font-size:14px;text-align:center;}
+  .panel{width:100%;max-width:480px;background:rgba(255,255,255,0.04);border:1px solid rgba(0,229,255,.2);
+    border-radius:16px;padding:16px;backdrop-filter:blur(6px);}
+  .row{display:flex;gap:8px;margin-bottom:10px;}
+  input[type=text],input[type=password]{flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);
+    background:rgba(0,0,0,.35);color:var(--text);font-size:14px;}
+  button{padding:10px 14px;border-radius:10px;border:none;background:var(--glow);color:#001018;
+    font-weight:600;cursor:pointer;}
+  button.secondary{background:transparent;border:1px solid var(--glow);color:var(--glow);}
+  .log{max-height:260px;overflow-y:auto;font-size:13px;line-height:1.5;margin-top:10px;}
+  .log .me{color:#9fe8ff;}
+  .log .ai{color:#ffd39f;}
+  .hint{font-size:11px;opacity:.55;margin-top:10px;text-align:center;}
+  a{color:var(--glow);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>J A R V I S</h1>
+  <div class="sub">Voice Assistant · Gemini AI</div>
+
+  <div class="orb-wrap">
+    <div class="ring"></div>
+    <div class="orb" id="orb"></div>
+  </div>
+  <div class="status" id="status">Mic dabao aur bolo...</div>
+
+  <div class="panel">
+    <div class="row">
+      <input type="password" id="apiKey" placeholder="Free Gemini API key yahan daalo">
+      <button class="secondary" id="saveKey">Save</button>
+    </div>
+    <div class="hint">Free key: <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></div>
+
+    <div class="row" style="margin-top:12px;">
+      <button id="micBtn" style="flex:1">🎙️ Bolo</button>
+      <button class="secondary" id="stopSpeak">🔇 Chup</button>
+    </div>
+    <div class="row">
+      <input type="text" id="textInput" placeholder="Ya yahan type karo...">
+      <button id="sendBtn">Bhejo</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), orb = $('orb'), log = $('log');
+const hasAndroidBridge = !!window.AndroidJarvis;
+
+try{ $('apiKey').value = localStorage.getItem('gemini_key') || ''; }catch(e){}
+$('saveKey').onclick = () => {
+  try{ localStorage.setItem('gemini_key', $('apiKey').value.trim()); }catch(e){}
+  addLog('ai','API key save ho gayi ✅');
+};
+
+function addLog(who, text){
+  const d = document.createElement('div');
+  d.className = who;
+  d.textContent = (who==='me' ? '🧑 ' : '🤖 ') + text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ---- Voice reply: Android native TTS if available, else Web Speech API ----
+function speak(text){
+  if(hasAndroidBridge){
+    window.AndroidJarvis.speak(text);
+    return;
+  }
+  try{
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'hi-IN';
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+$('stopSpeak').onclick = () => {
+  if(hasAndroidBridge){ window.AndroidJarvis.stopSpeak(); return; }
+  try{ window.speechSynthesis.cancel(); }catch(e){}
+};
+
+// ---- Voice command: Android native SpeechRecognizer if available, else Web Speech API ----
+let recog;
+if(!hasAndroidBridge){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(SR){
+    recog = new SR();
+    recog.lang = 'hi-IN';
+    recog.interimResults = false;
+    recog.onstart = () => { orb.classList.add('listening'); statusEl.textContent = 'Sun raha hoon...'; };
+    recog.onend = () => { orb.classList.remove('listening'); statusEl.textContent = 'Mic dabao aur bolo...'; };
+    recog.onerror = (e) => { statusEl.textContent = 'Mic error: ' + e.error; orb.classList.remove('listening'); };
+    recog.onresult = (e) => {
+      const said = e.results[0][0].transcript;
+      addLog('me', said);
+      handleCommand(said);
+    };
+  }
+}
+
+// callbacks Android calls into
+window.onAndroidSpeechResult = function(said){
+  orb.classList.remove('listening');
+  statusEl.textContent = 'Mic dabao aur bolo...';
+  if(said){ addLog('me', said); handleCommand(said); }
+};
+window.onAndroidSpeechError = function(code){
+  orb.classList.remove('listening');
+  statusEl.textContent = 'Mic error code: ' + code;
+};
+
+$('micBtn').onclick = () => {
+  if(hasAndroidBridge){
+    orb.classList.add('listening');
+    statusEl.textContent = 'Sun raha hoon...';
+    window.AndroidJarvis.startListening();
+    return;
+  }
+  if(!recog){ statusEl.textContent = 'Voice recognition support nahi hai.'; return; }
+  try{ recog.start(); }catch(e){}
+};
+
+$('sendBtn').onclick = () => {
+  const t = $('textInput').value.trim();
+  if(!t) return;
+  addLog('me', t);
+  $('textInput').value = '';
+  handleCommand(t);
+};
+$('textInput').addEventListener('keydown', e => { if(e.key==='Enter') $('sendBtn').click(); });
+
+// ---- Command handling ----
+async function handleCommand(raw){
+  const cmd = raw.toLowerCase();
+
+  if(cmd.includes('time') || cmd.includes('samay')){
+    const t = new Date().toLocaleTimeString('hi-IN');
+    reply('Abhi time hai ' + t);
+    return;
+  }
+  if(cmd.includes('date') || cmd.includes('tarikh')){
+    const d = new Date().toLocaleDateString('hi-IN', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    reply('Aaj ki date hai ' + d);
+    return;
+  }
+  if(cmd.includes('google')){
+    const q = raw.replace(/google/i,'').replace(/search/i,'').replace(/kholo|khol|par|khojo/gi,'').trim();
+    const url = 'https://www.google.com/search?q=' + encodeURIComponent(q || raw);
+    window.open(url, '_blank');
+    reply('Google khol raha hoon' + (q ? (' — ' + q + ' search kar raha hoon') : ''));
+    return;
+  }
+  if(cmd.includes('youtube')){
+    const q = raw.replace(/youtube/i,'').replace(/kholo|khol|par|khojo/gi,'').trim();
+    const url = q ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q)
+                  : 'https://www.youtube.com';
+    window.open(url, '_blank');
+    reply('YouTube khol raha hoon' + (q ? (' — ' + q) : ''));
+    return;
+  }
+
+  await askGemini(raw);
+}
+
+function reply(text){
+  addLog('ai', text);
+  speak(text);
+}
+
+async function askGemini(prompt){
+  const key = (localStorage.getItem('gemini_key') || $('apiKey').value || '').trim();
+  if(!key){
+    reply('Pehle apni free Gemini API key panel me daalo aur Save dabao.');
+    return;
+  }
+  statusEl.textContent = 'Soch raha hoon...';
+  try{
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await res.json();
+    if(data.error){
+      reply('Error: ' + data.error.message);
+    } else {
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Maaf karo, jawab nahi mila.';
+      reply(text);
+    }
+  }catch(e){
+    reply('Network error aa gaya. Internet connection check karo.');
+  } finally {
+    statusEl.textContent = 'Mic dabao aur bolo...';
+  }
+}
+</script>
+</body>
+</html>
