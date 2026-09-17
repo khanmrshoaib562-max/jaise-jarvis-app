@@ -27,7 +27,7 @@ jobs:
 
       - name: Extract and Build
         run: |
-          unzip -o Jarvis.zip -d project
+          unzip -o JarvisApp.zip -d project
           find project -maxdepth 4 -type d -name "settings.gradle*" -o -name "build.gradle*"
           PROJECT_ROOT=$(find project -name "settings.gradle*" -o -name "build.gradle*" | head -1 | xargs dirname)
           echo "Root: $PROJECT_ROOT"
