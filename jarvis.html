@@ -87,7 +87,6 @@ function addLog(who, text){
   log.scrollTop = log.scrollHeight;
 }
 
-// ---- Voice reply: Android native TTS if available, else Web Speech API ----
 function speak(text){
   if(hasAndroidBridge){
     window.AndroidJarvis.speak(text);
@@ -105,7 +104,6 @@ $('stopSpeak').onclick = () => {
   try{ window.speechSynthesis.cancel(); }catch(e){}
 };
 
-// ---- Voice command: Android native SpeechRecognizer if available, else Web Speech API ----
 let recog;
 if(!hasAndroidBridge){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -124,7 +122,6 @@ if(!hasAndroidBridge){
   }
 }
 
-// callbacks Android calls into
 window.onAndroidSpeechResult = function(said){
   orb.classList.remove('listening');
   statusEl.textContent = 'Mic dabao aur bolo...';
@@ -155,7 +152,6 @@ $('sendBtn').onclick = () => {
 };
 $('textInput').addEventListener('keydown', e => { if(e.key==='Enter') $('sendBtn').click(); });
 
-// ---- Command handling ----
 async function handleCommand(raw){
   const cmd = raw.toLowerCase();
 
@@ -201,7 +197,7 @@ async function askGemini(prompt){
   }
   statusEl.textContent = 'Soch raha hoon...';
   try{
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + encodeURIComponent(key), {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + encodeURIComponent(key), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
